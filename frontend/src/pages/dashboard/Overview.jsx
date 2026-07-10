@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Users, Workflow, PlayCircle, Inbox, CheckCircle2, XCircle } from "lucide-react";
 import { api } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
+import { RunDetailsDialog } from "../../components/RunDetails";
 
 const StatCard = ({ icon: Icon, label, value, accent }) => (
   <div data-testid={`stat-card-${label.toLowerCase().replace(/\s/g, "-")}`} className="bg-card border border-border rounded-2xl p-6 shadow-xl shadow-teal-900/5 dark:shadow-black/40">
@@ -16,6 +17,7 @@ const StatCard = ({ icon: Icon, label, value, accent }) => (
 export default function Overview() {
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
+  const [selectedRun, setSelectedRun] = useState(null);
 
   useEffect(() => {
     api.get("/dashboard/stats").then(({ data }) => setStats(data)).catch(() => {});
@@ -39,7 +41,12 @@ export default function Overview() {
       <div className="bg-card border border-border rounded-2xl shadow-xl shadow-teal-900/5 dark:shadow-black/40 divide-y divide-border" data-testid="recent-activity-list">
         {stats?.recent_runs?.length ? (
           stats.recent_runs.map((run) => (
-            <div key={run.id} className="flex items-center gap-4 px-6 py-4">
+            <button
+              key={run.id}
+              onClick={() => setSelectedRun(run)}
+              data-testid={`activity-run-${run.id}`}
+              className="w-full text-left flex items-center gap-4 px-6 py-4 hover:bg-secondary/50 transition-colors focus:outline-none"
+            >
               {run.status === "success" ? (
                 <CheckCircle2 className="w-5 h-5 text-primary shrink-0" />
               ) : (
@@ -56,7 +63,7 @@ export default function Overview() {
               <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${run.status === "success" ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"}`}>
                 {run.status}
               </span>
-            </div>
+            </button>
           ))
         ) : (
           <p className="px-6 py-10 text-sm text-muted-foreground" data-testid="no-activity-message">
@@ -64,6 +71,7 @@ export default function Overview() {
           </p>
         )}
       </div>
+      <RunDetailsDialog run={selectedRun} onOpenChange={(open) => !open && setSelectedRun(null)} />
     </div>
   );
 }

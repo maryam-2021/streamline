@@ -113,6 +113,8 @@ class WorkflowStep(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     type: str = "action"
     url: Optional[str] = Field(default=None, max_length=500)
+    to: Optional[str] = Field(default=None, max_length=200)
+    message: Optional[str] = Field(default=None, max_length=1000)
 
 
 class WorkflowCreate(BaseModel):
@@ -451,31 +453,51 @@ async def delete_workflow(workflow_id: str, user: dict = Depends(get_current_use
 
 # ---------- Workflow execution engine ----------
 
+async def _run_step(step: dict, wf: dict, triggered_by: str, event: Optional[dict]) -> dict:
+    stype = step.get("type", "action")
+    name = step["name"]
+    text = step.get("message") or f"StreamLine: workflow '{wf['name']}' step '{name}' executed ({triggered_by})"
+    if stype == "webhook" and step.get("url"):
+        async with httpx.AsyncClient(timeout=10) as hc:
+            r = await hc.post(step["url"], json={
+                "workflow": wf["name"], "trigger": wf["trigger"], "step": name,
+                "triggered_by": triggered_by, "event": event or {},
+            })
+        return {"name": name, "type": stype, "status": "success" if r.status_code < 400 else "failed", "detail": f"HTTP {r.status_code}"}
+    if stype == "slack" and step.get("url"):
+        async with httpx.AsyncClient(timeout=10) as hc:
+            r = await hc.post(step["url"], json={"text": text})
+        return {"name": name, "type": stype, "status": "success" if r.status_code < 400 else "failed", "detail": f"Slack HTTP {r.status_code}"}
+    if stype == "email" and step.get("to"):
+        api_key = os.environ.get("RESEND_API_KEY")
+        if not api_key:
+            logger.info(f"[MOCK EMAIL STEP] Would email {step['to']}: {text}")
+            return {"name": name, "type": stype, "status": "success", "detail": "email mocked — set RESEND_API_KEY to send"}
+        resend.api_key = api_key
+        params = {
+            "from": os.environ.get("SENDER_EMAIL", "onboarding@resend.dev"),
+            "to": [step["to"]],
+            "subject": f"StreamLine: {wf['name']} — {name}",
+            "html": f"<p>{text}</p><p style='color:#5c7a78;font-size:12px'>Trigger: {wf['trigger']} · {triggered_by}</p>",
+        }
+        email = await asyncio.to_thread(resend.Emails.send, params)
+        return {"name": name, "type": stype, "status": "success", "detail": f"email sent ({email.get('id')})"}
+    return {"name": name, "type": "action", "status": "success", "detail": "action logged"}
+
+
 async def execute_workflow(wf: dict, triggered_by: str = "manual", event: Optional[dict] = None) -> dict:
     results = []
     overall = "success"
     total_ms = 0
     for step in wf.get("steps", []):
         t0 = time.monotonic()
-        if step.get("type") == "webhook" and step.get("url"):
-            try:
-                async with httpx.AsyncClient(timeout=10) as hc:
-                    r = await hc.post(step["url"], json={
-                        "workflow": wf["name"],
-                        "trigger": wf["trigger"],
-                        "step": step["name"],
-                        "triggered_by": triggered_by,
-                        "event": event or {},
-                    })
-                ok = r.status_code < 400
-                results.append({"name": step["name"], "type": "webhook", "status": "success" if ok else "failed", "detail": f"HTTP {r.status_code}"})
-                if not ok:
-                    overall = "failed"
-            except Exception as e:
-                results.append({"name": step["name"], "type": "webhook", "status": "failed", "detail": str(e)[:200]})
-                overall = "failed"
-        else:
-            results.append({"name": step["name"], "type": "action", "status": "success", "detail": "action logged"})
+        try:
+            result = await _run_step(step, wf, triggered_by, event)
+        except Exception as e:
+            result = {"name": step["name"], "type": step.get("type", "action"), "status": "failed", "detail": str(e)[:200]}
+        if result["status"] == "failed":
+            overall = "failed"
+        results.append(result)
         total_ms += int((time.monotonic() - t0) * 1000)
     run = {
         "id": str(uuid.uuid4()),
@@ -518,8 +540,11 @@ async def run_workflow(workflow_id: str, user: dict = Depends(get_current_user))
 
 
 @api_router.get("/runs", response_model=List[RunOut])
-async def list_runs(user: dict = Depends(get_current_user), limit: int = 20):
-    return await db.runs.find(owner_filter(user), {"_id": 0}).sort("started_at", -1).to_list(min(limit, 100))
+async def list_runs(user: dict = Depends(get_current_user), limit: int = 20, workflow_id: Optional[str] = None):
+    q = owner_filter(user)
+    if workflow_id:
+        q = {**q, "workflow_id": workflow_id}
+    return await db.runs.find(q, {"_id": 0}).sort("started_at", -1).to_list(min(limit, 100))
 
 
 # ---------- Dashboard stats ----------

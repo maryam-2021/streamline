@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
-import { Plus, Play, Pause, Trash2, Loader2, X, ArrowRight, Link2 } from "lucide-react";
+import { Plus, Play, Pause, Trash2, Loader2, X, ArrowRight, Link2, Mail, MessageSquare, History } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "../../components/ui/dialog";
+import { RunSteps } from "../../components/RunDetails";
 import { api, formatApiErrorDetail } from "../../lib/api";
+
+const stepIcons = { webhook: Link2, slack: MessageSquare, email: Mail };
 
 const triggers = ["New contact form submission", "New client added", "Schedule: daily 9am", "Webhook received", "Email received"];
 
@@ -18,16 +21,36 @@ export default function Workflows() {
   const [stepInput, setStepInput] = useState("");
   const [stepType, setStepType] = useState("action");
   const [stepUrl, setStepUrl] = useState("");
+  const [stepTo, setStepTo] = useState("");
+  const [stepMessage, setStepMessage] = useState("");
+  const [runsFor, setRunsFor] = useState(null);
+  const [runs, setRuns] = useState(null);
 
   const load = () => api.get("/workflows").then(({ data }) => setWorkflows(data)).catch(() => setWorkflows([]));
   useEffect(() => { load(); }, []);
 
+  const openRuns = async (wf) => {
+    setRunsFor(wf);
+    setRuns(null);
+    const { data } = await api.get(`/runs?workflow_id=${wf.id}&limit=20`);
+    setRuns(data);
+  };
+
   const addStep = () => {
     if (!stepInput.trim()) return;
-    if (stepType === "webhook" && !stepUrl.trim()) return;
-    setSteps([...steps, { name: stepInput.trim(), type: stepType, url: stepType === "webhook" ? stepUrl.trim() : null }]);
+    if ((stepType === "webhook" || stepType === "slack") && !stepUrl.trim()) return;
+    if (stepType === "email" && !stepTo.trim()) return;
+    setSteps([...steps, {
+      name: stepInput.trim(),
+      type: stepType,
+      url: stepType === "webhook" || stepType === "slack" ? stepUrl.trim() : null,
+      to: stepType === "email" ? stepTo.trim() : null,
+      message: stepMessage.trim() || null,
+    }]);
     setStepInput("");
     setStepUrl("");
+    setStepTo("");
+    setStepMessage("");
   };
 
   const save = async (e) => {
@@ -117,7 +140,9 @@ export default function Workflows() {
                     className="h-10 rounded-xl border border-input bg-background px-3 text-sm sm:shrink-0"
                   >
                     <option value="action">Action (logged)</option>
-                    <option value="webhook">Webhook (real HTTP POST)</option>
+                    <option value="webhook">Webhook (HTTP POST)</option>
+                    <option value="slack">Slack message</option>
+                    <option value="email">Send email</option>
                   </select>
                   <div className="flex gap-2 flex-1">
                     <Input data-testid="workflow-step-input" placeholder="Step name" value={stepInput} onChange={(e) => setStepInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addStep(); } }} className="rounded-xl" />
@@ -129,15 +154,18 @@ export default function Workflows() {
                 )}
                 {steps.length > 0 && (
                   <div className="flex flex-wrap gap-2 mt-3">
-                    {steps.map((s, i) => (
-                      <span key={i} className="inline-flex items-center gap-1.5 text-xs bg-secondary px-3 py-1.5 rounded-full">
-                        {s.type === "webhook" && <Link2 className="w-3 h-3 text-accent" />}
-                        {i + 1}. {s.name}
-                        <button type="button" onClick={() => setSteps(steps.filter((_, j) => j !== i))} aria-label="Remove step">
-                          <X className="w-3 h-3" />
-                        </button>
-                      </span>
-                    ))}
+                    {steps.map((s, i) => {
+                      const Icon = stepIcons[s.type];
+                      return (
+                        <span key={i} className="inline-flex items-center gap-1.5 text-xs bg-secondary px-3 py-1.5 rounded-full">
+                          {Icon && <Icon className="w-3 h-3 text-accent" />}
+                          {i + 1}. {s.name}
+                          <button type="button" onClick={() => setSteps(steps.filter((_, j) => j !== i))} aria-label="Remove step">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -174,6 +202,9 @@ export default function Workflows() {
                     {runningId === wf.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
                     <span className="ml-1.5">Run</span>
                   </Button>
+                  <button data-testid={`workflow-runs-${wf.id}`} onClick={() => openRuns(wf)} className="p-2 rounded-xl border border-border text-muted-foreground hover:text-foreground transition-colors" aria-label="Run history">
+                    <History className="w-4 h-4" />
+                  </button>
                   <button data-testid={`workflow-toggle-${wf.id}`} onClick={() => toggle(wf.id)} className="p-2 rounded-xl border border-border text-muted-foreground hover:text-foreground transition-colors" aria-label="Toggle status">
                     {wf.status === "active" ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                   </button>
@@ -199,6 +230,34 @@ export default function Workflows() {
           ))
         )}
       </div>
+
+      <Dialog open={!!runsFor} onOpenChange={(open) => !open && setRunsFor(null)}>
+        <DialogContent className="rounded-2xl max-h-[80vh] overflow-y-auto" data-testid="workflow-runs-dialog">
+          <DialogHeader>
+            <DialogTitle className="font-serif text-2xl">Run history — {runsFor?.name}</DialogTitle>
+            <DialogDescription>Last {runs?.length ?? "…"} runs with step-by-step results.</DialogDescription>
+          </DialogHeader>
+          {runs === null ? (
+            <p className="text-sm text-muted-foreground">Loading...</p>
+          ) : runs.length === 0 ? (
+            <p className="text-sm text-muted-foreground" data-testid="no-runs-message">No runs yet for this workflow.</p>
+          ) : (
+            <div className="space-y-5">
+              {runs.map((run) => (
+                <div key={run.id} className="border border-border rounded-xl p-4" data-testid={`run-history-${run.id}`}>
+                  <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+                    <span className="text-xs text-muted-foreground">{new Date(run.started_at).toLocaleString()} · {run.duration_ms}ms · {run.triggered_by}</span>
+                    <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${run.status === "success" ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"}`}>
+                      {run.status}
+                    </span>
+                  </div>
+                  <RunSteps run={run} />
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
