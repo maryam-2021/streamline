@@ -1,0 +1,58 @@
+{
+  "summary": "Iteration 2 covered auth (JWT + Emergent Google session) and dashboard (clients, workflows, runs, leads, stats) at both API and UI level. 16/17 backend tests passed (brute-force lockout not working behind ingress). All 9 UI flows passed end-to-end.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/auth/login",
+        "issue": "Brute-force lockout is effectively broken behind Kubernetes ingress. The lockout key is `f\"{request.client.host}:{email}\"`, but `request.client.host` returns the ingress proxy IP which rotates across requests (observed 10.227.37.2 and 10.227.37.5 for the same client during 6 consecutive failed logins). Because the counter is bucketed per proxy IP, no single bucket ever reaches 5 and the 429 lockout never fires. Confirmed via mongosh: the same email produced two separate documents in `login_attempts` with counts 2 and 4 instead of one document with count 5. Fix: key on email alone, or on the first hop of X-Forwarded-For (`request.headers.get('x-forwarded-for','').split(',')[0].strip() or request.client.host`).",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "CORS middleware",
+        "issue": "`allow_credentials=True` combined with `allow_origins=['*']` (default from CORS_ORIGINS='*' in backend/.env). Browsers reject credentialed requests when Access-Control-Allow-Origin is '*'. Currently works only because the frontend and API share the same origin; will break if any other origin is added. Set CORS_ORIGINS to the explicit preview URL."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard > Overview stat cards",
+       "issues": ["Stat card labels rendered with an em-dash prefix (e.g. '—Clients', '—Active Workflows'). Looks like the value placeholder is glued to the label with no whitespace/line-break, appearing as a single string. Verify Overview.jsx renders value in its own element above/beside the label."]},
+      {"screen": "Dialogs (Add Client / Add Workflow)",
+       "issues": ["Radix DialogContent missing Description / aria-describedby — console warning logged. Add <DialogDescription> for a11y."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Fix brute-force lockout keying (main agent) — use email or X-Forwarded-For instead of request.client.host.",
+    "Tighten CORS_ORIGINS to explicit preview origin(s).",
+    "Fix Overview stat card rendering — value shows as '—' concatenated with label ('—Clients').",
+    "Add DialogDescription to shadcn dialogs to remove a11y warnings."
+  ],
+  "critical_code_review_comments": [
+    "server.py brute-force lockout is unusable behind a reverse proxy (uses request.client.host).",
+    "CORS_ORIGINS='*' with allow_credentials=True is a spec violation.",
+    "seed_admin in startup does update-if-password-changed — good, matches playbook requirement.",
+    "bcrypt hashing correct ($2b$), httpOnly + secure + SameSite=None cookies set correctly.",
+    "owner_filter cleanly enforces per-user scoping and admin bypass across clients/workflows/runs.",
+    "Workflow runs are simulated (random 90% success, random duration) — clearly MOCKED as documented.",
+    "Contact endpoint has no auth and no rate limiting — spam-abuse risk (minor).",
+    "server.py is 494 lines — fine for now but approaching threshold for module split (auth, clients, workflows, dashboard)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {"backend": "94% (16/17)", "frontend": "100% (9/9 UI flows)"},
+  "test_credentials": "admin@streamline.app / StreamAdmin#2026 verified working; client accounts created dynamically via /api/auth/register during tests.",
+  "seed_data_creation": "Playwright test created 'UI TEST Client' and 'UI TEST WF' under admin scope. mongosh fixture creates test.user.*@example.com Google-session users with test_session_* tokens (auto-cleanup in fixture teardown).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "After brute-force fix, re-run backend/tests/backend_test.py::test_bruteforce_lockout — it registers a fresh user then makes 6 wrong-password attempts and expects the 6th to be 429. The Google session fixture uses mongosh directly against the local test_database. UI flows are all working; focus next iteration on regressions after the lockout+CORS+overview fixes.",
+  "rca of the issue": "Brute-force lockout: request.client.host in FastAPI returns the immediate TCP peer, which is the ingress proxy pod IP. Kubernetes ingress load-balances across proxy pods, so the source IP observed by uvicorn changes between requests from the same real client. The lockout key `{proxy_ip}:{email}` therefore fragments the counter across multiple documents and never crosses the threshold. Reproduction: register user, POST /api/auth/login with wrong password 6 times from the same external client; confirm via `db.login_attempts.find()` that multiple documents exist with counts <5. Mitigation: derive client IP from `X-Forwarded-For` (leftmost hop) or drop IP from the key and rate-limit purely on email (safer against distributed brute-forcing anyway)."
+}
