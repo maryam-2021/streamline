@@ -149,8 +149,14 @@ export default function Workflows() {
                     <Button type="button" data-testid="workflow-add-step-button" onClick={addStep} variant="outline" className="rounded-xl shrink-0">Add</Button>
                   </div>
                 </div>
-                {stepType === "webhook" && (
-                  <Input data-testid="workflow-step-url-input" type="url" placeholder="https://webhook-url.example.com/hook" value={stepUrl} onChange={(e) => setStepUrl(e.target.value)} className="rounded-xl" />
+                {(stepType === "webhook" || stepType === "slack") && (
+                  <Input data-testid="workflow-step-url-input" type="url" placeholder={stepType === "slack" ? "Slack incoming webhook URL (https://hooks.slack.com/...)" : "https://webhook-url.example.com/hook"} value={stepUrl} onChange={(e) => setStepUrl(e.target.value)} className="rounded-xl mb-2" />
+                )}
+                {stepType === "email" && (
+                  <Input data-testid="workflow-step-to-input" type="email" placeholder="Recipient email" value={stepTo} onChange={(e) => setStepTo(e.target.value)} className="rounded-xl mb-2" />
+                )}
+                {(stepType === "slack" || stepType === "email") && (
+                  <Input data-testid="workflow-step-message-input" placeholder="Message (optional)" value={stepMessage} onChange={(e) => setStepMessage(e.target.value)} className="rounded-xl" />
                 )}
                 {steps.length > 0 && (
                   <div className="flex flex-wrap gap-2 mt-3">

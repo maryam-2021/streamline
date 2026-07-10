@@ -31,6 +31,11 @@ Teal-themed workflow automation product: marketing site (landing, pricing, conta
 - PWA: manifest.json (teal theme), service worker (offline shell), icons, installable; dashboard mobile bottom tab bar
 - Mobile scaffold: /app/mobile Expo + React Native + TypeScript app (shared teal tokens, Bearer JWT auth via token field in login response) — runnable locally with `npx expo start`, NOT runnable in this environment
 
+### Phase 5 — Slack/Email steps + Run drill-down + Deployment prep (Jul 2026, iteration_4: backend 34/34; UI slack/email input bug found+fixed+verified)
+- Step types: action (no-op), webhook (real POST), slack (real POST to incoming-webhook URL), email (Resend, MOCKED without key); optional per-step message
+- Run drill-down: clickable Overview activity rows → run details dialog; History button per workflow → run history dialog (GET /api/runs?workflow_id=)
+- $0 deploy prep: DEPLOYMENT.md guide (Cloudflare Pages + Render + Atlas M0), render.yaml blueprint, _redirects SPA fallback, .env.example files; deployment_agent readiness: PASS
+
 ## MOCKED
 - Workflow runs are SIMULATED (random duration, ~90% success) — no real external actions
 
