@@ -25,6 +25,12 @@ Teal-themed workflow automation product: marketing site (landing, pricing, conta
 - Resend integration wired: contact form submission triggers background email to NOTIFY_EMAIL/ADMIN_EMAIL with teal-branded HTML template
 - MOCKED until user adds RESEND_API_KEY to backend/.env (currently logs notification instead of sending)
 
+### Phase 4 — Real workflow engine + PWA + Mobile scaffold (Jul 2026, tested iteration_3: 29/29 backend, UI 100%)
+- Real execution: webhook steps do actual HTTP POST (10s timeout, per-step results stored in runs.steps_results); action steps are logged no-ops
+- Event-driven triggers: contact form submission auto-runs matching active workflows (global), new client auto-runs owner's matching workflows; paused workflows never auto-run; runs tagged triggered_by manual/auto
+- PWA: manifest.json (teal theme), service worker (offline shell), icons, installable; dashboard mobile bottom tab bar
+- Mobile scaffold: /app/mobile Expo + React Native + TypeScript app (shared teal tokens, Bearer JWT auth via token field in login response) — runnable locally with `npx expo start`, NOT runnable in this environment
+
 ## MOCKED
 - Workflow runs are SIMULATED (random duration, ~90% success) — no real external actions
 
