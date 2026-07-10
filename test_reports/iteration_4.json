@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration 4 tested: Slack + Email step types (with mocked email), optional per-step message field, GET /api/runs?workflow_id=X filter, and drill-down UI (Overview activity-run→run-details-dialog, Workflows History→workflow-runs-dialog). Backend 34/34 pass (5 new + 29 regression). Backend + all backend contracts for the 4 step types verified end-to-end (action logged / HTTP 200 / Slack HTTP 200 / email mocked). Both drill-down dialogs render steps correctly with type-specific icons and detail text. HOWEVER a critical UI bug blocks creating slack/email steps via the New Workflow form: only the webhook URL input is rendered conditionally — the slack URL input, email 'to' input, and message input are all missing.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Workflows.jsx step form (lines 152-154)",
+        "issue": "Only `stepType === 'webhook'` renders a conditional input (`workflow-step-url-input`). For slack: no url input; for email: no `workflow-step-to-input`; for slack+email: no `workflow-step-message-input`. Combined with the addStep() guards (`if ((stepType==='webhook'||stepType==='slack') && !stepUrl.trim()) return;` and `if (stepType==='email' && !stepTo.trim()) return;`), it is IMPOSSIBLE to add a slack or email step through the UI — clicking Add is silently a no-op. Message field also cannot be provided from UI for any step type.",
+        "selector": "[data-testid=\"workflow-step-type-select\"] + missing [data-testid=\"workflow-step-url-input\"] (slack) / [data-testid=\"workflow-step-to-input\"] (email) / [data-testid=\"workflow-step-message-input\"] (slack+email)",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration4.py",
+    "/app/backend/tests/test_iteration3.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/iter4_results.xml",
+    "/app/test_reports/pytest/iter4_all.xml"
+  ],
+  "action_items": [
+    "In /app/frontend/src/pages/dashboard/Workflows.jsx, extend the conditional-input block (currently ~lines 152-154) to also render: (a) workflow-step-url-input when stepType==='slack'; (b) workflow-step-to-input when stepType==='email'; (c) workflow-step-message-input when stepType==='slack' || stepType==='email'. Wire each to stepUrl / stepTo / stepMessage state (already declared in component)."
+  ],
+  "critical_code_review_comments": [
+    "Bug root cause: Workflows.jsx line 152 only checks `stepType === 'webhook'` for rendering url input; slack path adds a stepUrl state variable and addStep guard but never renders any input for the user to fill it. Same for email/message.",
+    "Backend _run_step is clean: falls back to default text if step.message missing (line 459) — nice safety net.",
+    "GET /api/runs owner_filter applied before workflow_id merge — verified cross-user leakage impossible (test_runs_workflow_id_scoped_to_owner passes).",
+    "RunSteps component correctly maps type→icon (webhook→Link2, slack→MessageSquare, email→Mail, action→FileText) and defaults to FileText for unknown types.",
+    "server.py now 611 lines — approaching split threshold (auth / clients / workflows / exec into separate modules recommended).",
+    "CORS still `*` with allow_credentials=True (backend/.env) — carried over from iter 2/3, non-blocking today (same origin) but browsers reject credentialed CORS with wildcard.",
+    "Public /api/contact still has no per-IP rate limit — spammer can trigger webhook runs via active 'New contact form submission' workflows."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration4.py (new, 5 tests)"
+  ],
+  "success_rate": {"backend": "100% (34/34)", "frontend": "80% — Overview run-details-dialog + Workflows history-dialog work perfectly; step creation form for slack/email/message is broken"},
+  "test_credentials": "admin@streamline.app / StreamAdmin#2026 verified. Existing 'Multi Step WF' in admin scope already contains all 4 step types (Ping/Notify team/Email boss/Log it) with 1 successful run — used it to exercise history and details dialogs since UI can't create such a workflow.",
+  "seed_data_creation": "Backend tests create TEST_* prefixed workflows and delete them in-place. Two ephemeral users (ownA_/ownB_) registered per scope test — not cleaned. 'Multi Step WF' pre-existing seed used for UI verification.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All backend contracts for iter 4 are green (34/34). If E1 adds the missing 3 conditional inputs to Workflows.jsx, only smoke-test the UI create flow for slack (needs URL+message) and email (needs to+message) then re-run test_iteration4.py once. The workflow-runs-dialog and run-details-dialog already work — no need to retest those. Keep using 'Multi Step WF' seed for regression on drill-downs."
+}
