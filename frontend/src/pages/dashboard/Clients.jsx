@@ -3,7 +3,7 @@ import { Plus, Pencil, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "../../components/ui/dialog";
 import { api, formatApiErrorDetail } from "../../lib/api";
 
 const empty = { name: "", email: "", company: "", status: "active" };
@@ -60,6 +60,7 @@ export default function Clients() {
           <DialogContent className="rounded-2xl">
             <DialogHeader>
               <DialogTitle className="font-serif text-2xl">{editing ? "Edit client" : "New client"}</DialogTitle>
+              <DialogDescription>{editing ? "Update client details." : "Add a client to your roster."}</DialogDescription>
             </DialogHeader>
             <form onSubmit={save} className="space-y-4 mt-2" data-testid="client-form">
               <Input data-testid="client-name-input" required placeholder="Client name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="rounded-xl" />

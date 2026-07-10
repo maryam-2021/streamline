@@ -3,7 +3,7 @@ import { Plus, Play, Pause, Trash2, Loader2, X, ArrowRight } from "lucide-react"
 import { toast } from "sonner";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "../../components/ui/dialog";
 import { api, formatApiErrorDetail } from "../../lib/api";
 
 const triggers = ["New contact form submission", "New client added", "Schedule: daily 9am", "Webhook received", "Email received"];
@@ -84,6 +84,7 @@ export default function Workflows() {
           <DialogContent className="rounded-2xl">
             <DialogHeader>
               <DialogTitle className="font-serif text-2xl">New workflow</DialogTitle>
+              <DialogDescription>Pick a trigger and chain the steps to automate.</DialogDescription>
             </DialogHeader>
             <form onSubmit={save} className="space-y-4 mt-2" data-testid="workflow-form">
               <Input data-testid="workflow-name-input" required placeholder="Workflow name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="rounded-xl" />

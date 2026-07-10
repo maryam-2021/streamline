@@ -230,7 +230,8 @@ async def register(payload: RegisterInput, response: Response):
 @api_router.post("/auth/login", response_model=UserOut)
 async def login(payload: LoginInput, request: Request, response: Response):
     email = payload.email.lower()
-    identifier = f"{request.client.host}:{email}"
+    client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or request.client.host
+    identifier = f"{client_ip}:{email}"
     attempt = await db.login_attempts.find_one({"identifier": identifier}, {"_id": 0})
     if attempt and attempt.get("count", 0) >= 5:
         locked_until = datetime.fromisoformat(attempt["locked_until"])
