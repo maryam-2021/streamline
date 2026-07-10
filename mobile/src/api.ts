@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const BASE = process.env.EXPO_PUBLIC_API_URL || 'https://streamline-mobile-1.preview.emergentagent.com';
+const BASE = process.env.EXPO_PUBLIC_API_URL;
 
 export async function getToken() {
   return AsyncStorage.getItem('streamline_token');
