@@ -1,0 +1,112 @@
+{
+  "theme": "Dark and Light Mode (Persisted to localStorage)",
+  "typography": {
+    "heading": "DM Serif Display, serif",
+    "body": "DM Sans, sans-serif",
+    "rules": "Use tight letter spacing (tracking-tight) for all headings above text-3xl. Never use bold if DM Serif naturally lacks it. Body text must use leading-relaxed for optimal readability."
+  },
+  "colors": {
+    "primary": "#0d9488",
+    "accent": "#c026d3",
+    "light_mode": {
+      "--background": "0 0% 98%",
+      "--foreground": "180 85% 10%",
+      "--primary": "174 84% 32%",
+      "--primary-foreground": "0 0% 100%",
+      "--accent": "293 69% 49%",
+      "--accent-foreground": "0 0% 100%",
+      "--card": "0 0% 100%",
+      "--card-foreground": "180 85% 10%",
+      "--border": "174 84% 90%"
+    },
+    "dark_mode": {
+      "--background": "180 85% 4%",
+      "--foreground": "174 84% 90%",
+      "--primary": "174 84% 32%",
+      "--primary-foreground": "0 0% 100%",
+      "--accent": "293 69% 49%",
+      "--accent-foreground": "0 0% 100%",
+      "--card": "180 80% 8%",
+      "--card-foreground": "174 84% 90%",
+      "--border": "180 85% 15%"
+    },
+    "description": "Teal-forward palette with Fuchsia accent. Full light/dark theme via CSS variables + Tailwind semantic tokens. The dark mode uses deep rich teal-black backgrounds to feel modern and tech-focused."
+  },
+  "visual enhancers": {
+    "shadows": "Soft shadows. Use shadow-xl shadow-teal-900/5 for light mode cards. Use deep shadow-black/40 for dark mode.",
+    "radii": "Generous rounded corners. Cards and major components MUST use rounded-2xl.",
+    "glassmorphism": "Mandatory for Sticky Navbar: backdrop-blur-xl bg-background/80 with a 1px bottom border. DO NOT use completely transparent backgrounds for the navbar."
+  },
+  "component name": [
+    "Sticky Navbar",
+    "Hero Section",
+    "Features Grid",
+    "Pricing Tiers",
+    "Contact Form",
+    "Multi-column Footer"
+  ],
+  "grids": {
+    "features": "Bento Grid Protocol (Mode A - Tetris Grid). grid-cols-1 md:grid-cols-8 lg:grid-cols-12 with wide gaps (gap-8). Mix col-span-4 and col-span-8 to create intentional asymmetry."
+  },
+  "layouts": {
+    "spacing": "Generous spacing. Use p-8 to p-16 for containers. Containers with borders MUST have internal padding.",
+    "hero": "Split layout or Asymmetrical text-heavy left with a floating product visual on the right. Dark mode hero can use the abstract neon lines image as a subtle background accent.",
+    "pricing": "3-column grid. Highlight the Pro tier using a 'Tracing Beam' glowing border (fuchsia/teal) and an elevated scale (scale-105 on large screens).",
+    "footer": "Multi-column layout, deep dark background. Large typography for brand name."
+  },
+  "motion": {
+    "framer_motion": "Stagger children on scroll. Hover states with translate-y-[-2px] or scale-[1.02] for buttons and cards.",
+    "transitions": "Add transitions specifically to transform, opacity, and colors. Do not use 'transition-all'."
+  },
+  "accessibility": {
+    "contrast": "Ensure text over buttons meets 4.5:1 ratio. White text on Teal and Fuchsia buttons.",
+    "testing": "All interactive elements (buttons, links, toggles, form inputs) MUST have data-testid attributes.",
+    "focus": "focus:ring-2 focus:ring-accent focus:outline-none for keyboard navigation."
+  },
+  "media": {
+    "rules": "Images must never exceed 80vh on mobile. Max overlay opacity bg-black/40 for hero images.",
+    "icons": "Use lucide-react. Keep stroke width consistent."
+  },
+  "3d libraries": {
+    "usage": "Not strictly required for this scope, but Framer Motion can simulate 2.5D depth on pricing cards."
+  },
+  "image_urls": [
+    {
+      "url": "https://images.unsplash.com/photo-1616440347437-b1c73416efc2?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzB8MHwxfHNlYXJjaHwzfHxtb2Rlcm4lMjBtaW5pbWFsJTIwZGVzayUyMGNvbXB1dGVyJTIwc2V0dXB8ZW58MHx8fHwxNzgzNzA3NzE1fDA&ixlib=rb-4.1.0&q=85",
+      "category": "Hero Background or Product Context",
+      "description": "Modern desk setup to imply workflow automation in action."
+    },
+    {
+      "url": "https://images.unsplash.com/photo-1764258560292-ba76effe9797?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzV8MHwxfHNlYXJjaHw0fHxhYnN0cmFjdCUyMGdlb21ldHJpYyUyMGZsb3clMjB0ZWFsJTIwZnVjaHNpYXxlbnwwfHx8fDE3ODM3MDc3MTV8MA&ixlib=rb-4.1.0&q=85",
+      "category": "Features Accent / Background",
+      "description": "Abstract neon lines in purple (fuchsia) and teal. Excellent for dark mode visual flair."
+    },
+    {
+      "url": "https://images.unsplash.com/photo-1576267423445-b2e0074d68a4?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA4Mzl8MHwxfHNlYXJjaHwxfHxzbWlsaW5nJTIwZGl2ZXJzZSUyMHByb2Zlc3Npb25hbHMlMjBvZmZpY2V8ZW58MHx8fHwxNzgzNzA3NzE1fDA&ixlib=rb-4.1.0&q=85",
+      "category": "Contact / Team / Social Proof",
+      "description": "Diverse team collaborating. Use in the Contact section to humanize the product."
+    }
+  ],
+  "component_path": "/app/frontend/src/components/ui",
+  "instructions_to_main_agent": [
+    "1. Project uses .js/.jsx files, NOT .tsx. All components must be written in modern React JavaScript.",
+    "2. Setup Tailwind with provided CSS variables for HSL colors. Extend colors in tailwind.config.js for primary and accent.",
+    "3. Implement the light/dark mode toggle using a global state or class strategy on the HTML element, persisted to localStorage.",
+    "4. Add fonts DM Serif Display and DM Sans via Google Fonts or npm, map them in Tailwind config.",
+    "5. Use lucide-react for all iconography.",
+    "6. Use Shadcn components for complex interactions, but heavily customize borders (rounded-2xl) and colors.",
+    "7. Build the specific sections: Hero, Features (Bento Grid), Pricing (3-tiers with Pro highlighted), and Contact Form (MongoDB persistence logic must be wired up to the backend/API calls)."
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "Do not converge toward generic outputs. Make creative, distinctive frontends that surprise and delight.",
+    "Do not use dark colors as gradients. Use solid colors with distinct hierarchy.",
+    "Create depth through layered design elements (z-index) and glass-morphism (backdrop-blur-xl).",
+    "Do not apply `transition: all`. Target specific properties.",
+    "Do not center-align the app container (`.App { text-align: center; }` is forbidden).",
+    "Always use modern button styles (rounded-xl) with interaction animations and Fuchsia or Teal colors.",
+    "Never use placeholder AI emojis for icons; use actual SVG icons (lucide-react).",
+    "Use 2-3x more spacing than feels comfortable (p-8 to p-16).",
+    "All interactive elements MUST have a data-testid attribute.",
+    "Always use the provided `image_urls`. Missing images lead to forbidden placeholder text."
+  ]
+}
