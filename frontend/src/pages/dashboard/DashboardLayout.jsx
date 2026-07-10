@@ -91,18 +91,36 @@ export default function DashboardLayout() {
           <span className="font-serif text-lg">StreamLine</span>
         </div>
         <div className="flex items-center gap-1">
-          {items.map((item) => (
-            <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => `p-2 rounded-lg ${isActive ? "text-primary" : "text-muted-foreground"}`}>
-              <item.icon className="w-5 h-5" />
-            </NavLink>
-          ))}
-          <button onClick={handleLogout} className="p-2 text-muted-foreground" aria-label="Log out">
+          <button onClick={toggleTheme} className="p-2 text-muted-foreground" aria-label="Toggle theme">
+            {theme === "dark" ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+          </button>
+          <button onClick={handleLogout} className="p-2 text-muted-foreground" aria-label="Log out" data-testid="mobile-logout-button">
             <LogOut className="w-5 h-5" />
           </button>
         </div>
       </div>
 
-      <main className="flex-1 md:ml-64 pt-14 md:pt-0">
+      {/* Mobile bottom tab bar (PWA companion feel) */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-card/95 backdrop-blur-xl border-t border-border pb-[env(safe-area-inset-bottom)]" data-testid="mobile-tab-bar">
+        <div className="flex">
+          {items.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              data-testid={`mobile-tab-${item.label.toLowerCase()}`}
+              className={({ isActive }) =>
+                `flex-1 flex flex-col items-center gap-1 py-2.5 text-[11px] transition-colors ${isActive ? "text-primary" : "text-muted-foreground"}`
+              }
+            >
+              <item.icon className="w-5 h-5" />
+              {item.label}
+            </NavLink>
+          ))}
+        </div>
+      </nav>
+
+      <main className="flex-1 md:ml-64 pt-14 md:pt-0 pb-24 md:pb-0">
         <div className="p-6 lg:p-12 max-w-6xl">
           <Outlet />
         </div>

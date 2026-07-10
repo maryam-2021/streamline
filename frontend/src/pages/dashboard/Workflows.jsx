@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Play, Pause, Trash2, Loader2, X, ArrowRight } from "lucide-react";
+import { Plus, Play, Pause, Trash2, Loader2, X, ArrowRight, Link2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -16,14 +16,18 @@ export default function Workflows() {
   const [form, setForm] = useState({ name: "", description: "", trigger: triggers[0] });
   const [steps, setSteps] = useState([]);
   const [stepInput, setStepInput] = useState("");
+  const [stepType, setStepType] = useState("action");
+  const [stepUrl, setStepUrl] = useState("");
 
   const load = () => api.get("/workflows").then(({ data }) => setWorkflows(data)).catch(() => setWorkflows([]));
   useEffect(() => { load(); }, []);
 
   const addStep = () => {
     if (!stepInput.trim()) return;
-    setSteps([...steps, { name: stepInput.trim() }]);
+    if (stepType === "webhook" && !stepUrl.trim()) return;
+    setSteps([...steps, { name: stepInput.trim(), type: stepType, url: stepType === "webhook" ? stepUrl.trim() : null }]);
     setStepInput("");
+    setStepUrl("");
   };
 
   const save = async (e) => {
@@ -53,7 +57,10 @@ export default function Workflows() {
     try {
       const { data } = await api.post(`/workflows/${id}/run`);
       if (data.status === "success") toast.success(`Run completed in ${data.duration_ms}ms`);
-      else toast.error("Run failed — check workflow steps");
+      else {
+        const failed = (data.steps_results || []).find((s) => s.status === "failed");
+        toast.error(failed ? `Step "${failed.name}" failed: ${failed.detail}` : "Run failed");
+      }
       load();
     } catch (err) {
       toast.error(formatApiErrorDetail(err.response?.data?.detail));
@@ -102,14 +109,29 @@ export default function Workflows() {
               </div>
               <div>
                 <label className="text-sm font-medium mb-1.5 block">Steps</label>
-                <div className="flex gap-2">
-                  <Input data-testid="workflow-step-input" placeholder="e.g. Send Slack message" value={stepInput} onChange={(e) => setStepInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addStep(); } }} className="rounded-xl" />
-                  <Button type="button" data-testid="workflow-add-step-button" onClick={addStep} variant="outline" className="rounded-xl shrink-0">Add</Button>
+                <div className="flex flex-col sm:flex-row gap-2 mb-2">
+                  <select
+                    data-testid="workflow-step-type-select"
+                    value={stepType}
+                    onChange={(e) => setStepType(e.target.value)}
+                    className="h-10 rounded-xl border border-input bg-background px-3 text-sm sm:shrink-0"
+                  >
+                    <option value="action">Action (logged)</option>
+                    <option value="webhook">Webhook (real HTTP POST)</option>
+                  </select>
+                  <div className="flex gap-2 flex-1">
+                    <Input data-testid="workflow-step-input" placeholder="Step name" value={stepInput} onChange={(e) => setStepInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addStep(); } }} className="rounded-xl" />
+                    <Button type="button" data-testid="workflow-add-step-button" onClick={addStep} variant="outline" className="rounded-xl shrink-0">Add</Button>
+                  </div>
                 </div>
+                {stepType === "webhook" && (
+                  <Input data-testid="workflow-step-url-input" type="url" placeholder="https://webhook-url.example.com/hook" value={stepUrl} onChange={(e) => setStepUrl(e.target.value)} className="rounded-xl" />
+                )}
                 {steps.length > 0 && (
                   <div className="flex flex-wrap gap-2 mt-3">
                     {steps.map((s, i) => (
                       <span key={i} className="inline-flex items-center gap-1.5 text-xs bg-secondary px-3 py-1.5 rounded-full">
+                        {s.type === "webhook" && <Link2 className="w-3 h-3 text-accent" />}
                         {i + 1}. {s.name}
                         <button type="button" onClick={() => setSteps(steps.filter((_, j) => j !== i))} aria-label="Remove step">
                           <X className="w-3 h-3" />
@@ -165,7 +187,10 @@ export default function Workflows() {
                 {wf.steps.map((s, i) => (
                   <span key={i} className="inline-flex items-center gap-2 text-xs">
                     <ArrowRight className="w-3 h-3 text-muted-foreground" />
-                    <span className="bg-secondary px-3 py-1.5 rounded-full">{s.name}</span>
+                    <span className="bg-secondary px-3 py-1.5 rounded-full inline-flex items-center gap-1.5">
+                      {s.type === "webhook" && <Link2 className="w-3 h-3 text-accent" />}
+                      {s.name}
+                    </span>
                   </span>
                 ))}
               </div>

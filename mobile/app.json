@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "StreamLine",
+    "slug": "streamline-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "splash": { "backgroundColor": "#0d9488" },
+    "ios": { "supportsTablet": false },
+    "android": { "adaptiveIcon": { "backgroundColor": "#0d9488" } }
+  }
+}

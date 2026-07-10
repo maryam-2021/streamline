@@ -9,9 +9,9 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import jwt
+import time
 import bcrypt
 import httpx
-import random
 import asyncio
 import resend
 import logging
@@ -89,6 +89,7 @@ class UserOut(BaseModel):
     name: str
     role: str = "client"
     picture: Optional[str] = None
+    token: Optional[str] = None
 
 
 class ClientCreate(BaseModel):
@@ -110,6 +111,8 @@ class ClientOut(BaseModel):
 
 class WorkflowStep(BaseModel):
     name: str = Field(min_length=1, max_length=120)
+    type: str = "action"
+    url: Optional[str] = Field(default=None, max_length=500)
 
 
 class WorkflowCreate(BaseModel):
@@ -139,6 +142,8 @@ class RunOut(BaseModel):
     status: str
     duration_ms: int
     started_at: str
+    triggered_by: str = "manual"
+    steps_results: List[dict] = []
 
 
 # ---------- Auth helpers ----------
@@ -204,6 +209,7 @@ async def create_contact(payload: ContactCreate, background_tasks: BackgroundTas
     contact = Contact(**payload.model_dump())
     await db.contacts.insert_one(contact.model_dump())
     background_tasks.add_task(notify_new_lead, contact)
+    background_tasks.add_task(fire_trigger, "New contact form submission", contact.model_dump())
     return contact
 
 
@@ -260,8 +266,9 @@ async def register(payload: RegisterInput, response: Response):
         "created_at": now_iso(),
     }
     await db.users.insert_one(doc)
-    set_auth_cookie(response, create_access_token(user_id, email))
-    return UserOut(**doc)
+    jwt_token = create_access_token(user_id, email)
+    set_auth_cookie(response, jwt_token)
+    return UserOut(**doc, token=jwt_token)
 
 
 @api_router.post("/auth/login", response_model=UserOut)
@@ -286,10 +293,11 @@ async def login(payload: LoginInput, request: Request, response: Response):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     await db.login_attempts.delete_one({"identifier": identifier})
-    set_auth_cookie(response, create_access_token(user["user_id"], email))
+    jwt_token = create_access_token(user["user_id"], email)
+    set_auth_cookie(response, jwt_token)
     user.pop("password_hash", None)
     user.pop("_id", None)
-    return UserOut(**user)
+    return UserOut(**user, token=jwt_token)
 
 
 class SessionInput(BaseModel):
@@ -367,7 +375,7 @@ async def list_clients(user: dict = Depends(get_current_user)):
 
 
 @api_router.post("/clients", response_model=ClientOut)
-async def create_client(payload: ClientCreate, user: dict = Depends(get_current_user)):
+async def create_client(payload: ClientCreate, background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)):
     doc = {
         "id": str(uuid.uuid4()),
         "user_id": user["user_id"],
@@ -375,6 +383,7 @@ async def create_client(payload: ClientCreate, user: dict = Depends(get_current_
         "created_at": now_iso(),
     }
     await db.clients.insert_one({**doc})
+    background_tasks.add_task(fire_trigger, "New client added", {k: v for k, v in doc.items() if k != "user_id"}, user["user_id"])
     return ClientOut(**doc)
 
 
@@ -440,6 +449,62 @@ async def delete_workflow(workflow_id: str, user: dict = Depends(get_current_use
     return {"success": True}
 
 
+# ---------- Workflow execution engine ----------
+
+async def execute_workflow(wf: dict, triggered_by: str = "manual", event: Optional[dict] = None) -> dict:
+    results = []
+    overall = "success"
+    total_ms = 0
+    for step in wf.get("steps", []):
+        t0 = time.monotonic()
+        if step.get("type") == "webhook" and step.get("url"):
+            try:
+                async with httpx.AsyncClient(timeout=10) as hc:
+                    r = await hc.post(step["url"], json={
+                        "workflow": wf["name"],
+                        "trigger": wf["trigger"],
+                        "step": step["name"],
+                        "triggered_by": triggered_by,
+                        "event": event or {},
+                    })
+                ok = r.status_code < 400
+                results.append({"name": step["name"], "type": "webhook", "status": "success" if ok else "failed", "detail": f"HTTP {r.status_code}"})
+                if not ok:
+                    overall = "failed"
+            except Exception as e:
+                results.append({"name": step["name"], "type": "webhook", "status": "failed", "detail": str(e)[:200]})
+                overall = "failed"
+        else:
+            results.append({"name": step["name"], "type": "action", "status": "success", "detail": "action logged"})
+        total_ms += int((time.monotonic() - t0) * 1000)
+    run = {
+        "id": str(uuid.uuid4()),
+        "workflow_id": wf["id"],
+        "workflow_name": wf["name"],
+        "user_id": wf["user_id"],
+        "status": overall,
+        "duration_ms": max(total_ms, 1),
+        "started_at": now_iso(),
+        "triggered_by": triggered_by,
+        "steps_results": results,
+    }
+    await db.runs.insert_one({**run})
+    await db.workflows.update_one({"id": wf["id"]}, {"$inc": {"runs_count": 1}})
+    return run
+
+
+async def fire_trigger(trigger: str, event: dict, user_id: Optional[str] = None):
+    q = {"trigger": trigger, "status": "active"}
+    if user_id:
+        q["user_id"] = user_id
+    workflows = await db.workflows.find(q, {"_id": 0}).to_list(100)
+    for wf in workflows:
+        try:
+            await execute_workflow(wf, triggered_by="auto", event=event)
+        except Exception as e:
+            logger.error(f"Auto-run failed for workflow {wf['id']}: {e}")
+
+
 @api_router.post("/workflows/{workflow_id}/run", response_model=RunOut)
 async def run_workflow(workflow_id: str, user: dict = Depends(get_current_user)):
     q = {"id": workflow_id, **owner_filter(user)}
@@ -448,17 +513,7 @@ async def run_workflow(workflow_id: str, user: dict = Depends(get_current_user))
         raise HTTPException(status_code=404, detail="Workflow not found")
     if wf["status"] != "active":
         raise HTTPException(status_code=400, detail="Workflow is paused. Activate it to run.")
-    run = {
-        "id": str(uuid.uuid4()),
-        "workflow_id": workflow_id,
-        "workflow_name": wf["name"],
-        "user_id": user["user_id"],
-        "status": "success" if random.random() < 0.9 else "failed",
-        "duration_ms": random.randint(120, 4200),
-        "started_at": now_iso(),
-    }
-    await db.runs.insert_one({**run})
-    await db.workflows.update_one(q, {"$inc": {"runs_count": 1}})
+    run = await execute_workflow(wf, triggered_by="manual")
     return RunOut(**run)
 
 

@@ -50,6 +50,9 @@ export default function Overview() {
                 <p className="text-xs text-muted-foreground">{new Date(run.started_at).toLocaleString()}</p>
               </div>
               <span className="text-xs text-muted-foreground">{run.duration_ms}ms</span>
+              <span className={`text-xs px-2 py-0.5 rounded-full ${run.triggered_by === "auto" ? "bg-accent/10 text-accent" : "bg-muted text-muted-foreground"}`}>
+                {run.triggered_by === "auto" ? "auto" : "manual"}
+              </span>
               <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${run.status === "success" ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"}`}>
                 {run.status}
               </span>
