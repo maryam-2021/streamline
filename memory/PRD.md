@@ -21,6 +21,10 @@ Teal-themed workflow automation product: marketing site (landing, pricing, conta
 - Dashboard: stats overview (clients/workflows/runs/leads + recent runs), Clients CRM (CRUD, dialog forms), Workflow builder (trigger + steps, active/pause toggle, simulated Run with history), Leads inbox (admin-only)
 - Role scoping: owner_filter (admin sees all, clients see own)
 
+### Phase 3 — Lead email notifications (Jul 2026)
+- Resend integration wired: contact form submission triggers background email to NOTIFY_EMAIL/ADMIN_EMAIL with teal-branded HTML template
+- MOCKED until user adds RESEND_API_KEY to backend/.env (currently logs notification instead of sending)
+
 ## MOCKED
 - Workflow runs are SIMULATED (random duration, ~90% success) — no real external actions
 
