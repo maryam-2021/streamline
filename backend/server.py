@@ -165,6 +165,11 @@ class AIRequest(BaseModel):
     thinking: bool = False
 
 
+class FlutterChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=8000)
+    thinking: bool = True
+
+
 class ClientCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     email: EmailStr
@@ -543,6 +548,15 @@ async def ask_ai(payload: AIRequest, user: dict = Depends(get_current_user)):
         "model": payload.model,
         "usage": response.usage.model_dump() if response.usage else None,
     }
+
+
+@api_router.post("/chat")
+async def flutter_chat(payload: FlutterChatRequest, user: dict = Depends(get_current_user)):
+    result = await ask_ai(
+        AIRequest(prompt=payload.message, model="deepseek-v4-flash", thinking=payload.thinking),
+        user,
+    )
+    return {"reply": result["content"]}
 
 
 # ---------- Billing ----------
