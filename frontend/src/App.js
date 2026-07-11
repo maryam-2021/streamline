@@ -18,6 +18,10 @@ import Overview from "./pages/dashboard/Overview";
 import Clients from "./pages/dashboard/Clients";
 import Workflows from "./pages/dashboard/Workflows";
 import Leads from "./pages/dashboard/Leads";
+import Billing from "./pages/dashboard/Billing";
+import { ForgotPassword, ResetPassword, VerifyEmail } from "./pages/AccountAction";
+import Legal from "./pages/Legal";
+import Settings from "./pages/dashboard/Settings";
 
 const Home = () => {
   const { theme, toggleTheme } = useTheme();
@@ -41,6 +45,11 @@ function AppRouter() {
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/verify-email" element={<VerifyEmail />} />
+      <Route path="/privacy" element={<Legal type="privacy" />} />
+      <Route path="/terms" element={<Legal type="terms" />} />
       <Route
         path="/dashboard"
         element={
@@ -53,6 +62,8 @@ function AppRouter() {
         <Route path="clients" element={<Clients />} />
         <Route path="workflows" element={<Workflows />} />
         <Route path="leads" element={<Leads />} />
+        <Route path="billing" element={<Billing />} />
+        <Route path="settings" element={<Settings />} />
       </Route>
     </Routes>
   );

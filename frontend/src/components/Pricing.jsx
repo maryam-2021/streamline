@@ -87,7 +87,7 @@ export const Pricing = () => (
                   : "bg-primary text-primary-foreground hover:bg-primary/90"
               }`}
             >
-              <a href="#contact">{t.name === "Enterprise" ? "Contact Sales" : "Get Started"}</a>
+              <a href={t.name === "Enterprise" ? "#contact" : t.name === "Pro" ? "/register?plan=pro" : "/register"}>{t.name === "Enterprise" ? "Contact Sales" : "Get Started"}</a>
             </Button>
           </motion.div>
         ))}

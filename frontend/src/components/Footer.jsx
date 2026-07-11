@@ -1,10 +1,9 @@
 import { Zap } from "lucide-react";
 
 const columns = [
-  { title: "Product", links: ["Features", "Pricing", "Integrations", "Changelog"] },
-  { title: "Company", links: ["About", "Blog", "Careers", "Contact"] },
-  { title: "Resources", links: ["Docs", "API Reference", "Community", "Status"] },
-  { title: "Legal", links: ["Privacy", "Terms", "Security"] },
+  { title: "Product", links: [["Features", "#features"], ["Pricing", "#pricing"], ["Sign in", "/login"]] },
+  { title: "Company", links: [["Contact", "#contact"], ["Get started", "/register"]] },
+  { title: "Legal", links: [["Privacy", "/privacy"], ["Terms", "/terms"]] },
 ];
 
 export const Footer = () => (
@@ -26,10 +25,10 @@ export const Footer = () => (
           <div key={c.title}>
             <h4 className="text-sm font-semibold uppercase tracking-widest mb-5 opacity-60" style={{ fontFamily: "'DM Sans', sans-serif" }}>{c.title}</h4>
             <ul className="space-y-3">
-              {c.links.map((l) => (
-                <li key={l}>
-                  <a href="#hero" data-testid={`footer-link-${l.toLowerCase().replace(/\s/g, "-")}`} className="text-sm opacity-70 hover:opacity-100 transition-opacity">
-                    {l}
+              {c.links.map(([label, href]) => (
+                <li key={label}>
+                  <a href={href} data-testid={`footer-link-${label.toLowerCase().replace(/\s/g, "-")}`} className="text-sm opacity-70 hover:opacity-100 transition-opacity">
+                    {label}
                   </a>
                 </li>
               ))}

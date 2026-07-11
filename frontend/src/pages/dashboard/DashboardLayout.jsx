@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Zap, LayoutDashboard, Users, Workflow, Inbox, LogOut, Moon, Sun } from "lucide-react";
+import { Zap, LayoutDashboard, Users, Workflow, Inbox, LogOut, Moon, Sun, CreditCard, Settings } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../hooks/useTheme";
 
@@ -7,6 +7,8 @@ const navItems = [
   { to: "/dashboard", label: "Overview", icon: LayoutDashboard, end: true },
   { to: "/dashboard/clients", label: "Clients", icon: Users },
   { to: "/dashboard/workflows", label: "Workflows", icon: Workflow },
+  { to: "/dashboard/billing", label: "Billing", icon: CreditCard },
+  { to: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
 export default function DashboardLayout() {

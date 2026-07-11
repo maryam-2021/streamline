@@ -67,6 +67,7 @@ export default function Login() {
           <form onSubmit={submit} className="space-y-5" data-testid="login-form">
             <Input data-testid="login-email-input" required type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="rounded-xl" />
             <Input data-testid="login-password-input" required type="password" placeholder="Password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="rounded-xl" />
+            <div className="text-right"><Link to="/forgot-password" data-testid="login-forgot-password-link" className="text-sm text-primary hover:underline">Forgot password?</Link></div>
             {error && <p data-testid="login-error" className="text-sm text-destructive">{error}</p>}
             <Button type="submit" disabled={loading} data-testid="login-submit-button" className="w-full rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
               {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Sign In

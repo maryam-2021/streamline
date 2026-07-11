@@ -28,8 +28,17 @@ Use the "Save to GitHub" feature in Emergent (or `git push`) to get this repo on
    - `JWT_SECRET` = long random hex (`python -c "import secrets;print(secrets.token_hex(32))"`)
    - `ADMIN_EMAIL`, `ADMIN_PASSWORD` = your admin credentials
    - `CORS_ORIGINS` = your Cloudflare Pages URL (e.g. `https://streamline.pages.dev`)
-   - Optional: `RESEND_API_KEY`, `SENDER_EMAIL`, `NOTIFY_EMAIL` for lead emails
-3. Note your backend URL, e.g. `https://streamline-api.onrender.com`
+   - `FRONTEND_URL` = your final Cloudflare Pages URL (no trailing slash)
+   - `STRIPE_SECRET_KEY` = Stripe restricted or secret API key
+   - `STRIPE_PRO_PRICE_ID` = recurring Pro price ID
+   - `STRIPE_WEBHOOK_SECRET` = signing secret for the webhook below
+   - `RESEND_API_KEY`, `SENDER_EMAIL`, `NOTIFY_EMAIL` for lead and workflow emails
+3. In Stripe Workbench, add a webhook endpoint at `<backend URL>/api/billing/webhook` for:
+   - `checkout.session.completed`
+   - `customer.subscription.created`
+   - `customer.subscription.updated`
+   - `customer.subscription.deleted`
+4. Note your backend URL, e.g. `https://streamline-api.onrender.com`
 
 ## 4. Frontend → Cloudflare Pages
 1. https://dash.cloudflare.com → Workers & Pages → Create → Pages → connect GitHub repo

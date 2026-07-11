@@ -14,8 +14,14 @@ import bcrypt
 import httpx
 import asyncio
 import resend
+import stripe
 import logging
 import uuid
+import secrets
+import hashlib
+import ipaddress
+import socket
+from urllib.parse import urlparse
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
@@ -52,6 +58,41 @@ def set_auth_cookie(response: Response, token: str, key: str = "access_token"):
     response.set_cookie(key=key, value=token, httponly=True, secure=True, samesite="none", max_age=604800, path="/")
 
 
+def token_digest(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+async def send_account_email(recipient: str, subject: str, html: str):
+    api_key = os.environ.get("RESEND_API_KEY")
+    if not api_key:
+        logger.info("Account email skipped because RESEND_API_KEY is not configured")
+        return
+    resend.api_key = api_key
+    await asyncio.to_thread(resend.Emails.send, {
+        "from": os.environ.get("SENDER_EMAIL", "onboarding@resend.dev"),
+        "to": [recipient],
+        "subject": subject,
+        "html": html,
+    })
+
+
+async def issue_account_token(user: dict, purpose: str, path: str, background_tasks: BackgroundTasks):
+    raw = secrets.token_urlsafe(48)
+    await db.account_tokens.delete_many({"user_id": user["user_id"], "purpose": purpose})
+    await db.account_tokens.insert_one({
+        "user_id": user["user_id"],
+        "purpose": purpose,
+        "token_hash": token_digest(raw),
+        "expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
+        "created_at": datetime.now(timezone.utc),
+    })
+    frontend_url = os.environ.get("FRONTEND_URL", "").rstrip("/")
+    if frontend_url:
+        url = f"{frontend_url}{path}?token={raw}"
+        label = "Reset password" if purpose == "password_reset" else "Verify email"
+        background_tasks.add_task(send_account_email, user["email"], f"{label} — StreamLine", f'<p>{label} by opening this secure link:</p><p><a href="{url}">{label}</a></p><p>This link expires in one hour.</p>')
+
+
 # ---------- Models ----------
 
 class ContactCreate(BaseModel):
@@ -74,7 +115,7 @@ class Contact(BaseModel):
 class RegisterInput(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     email: EmailStr
-    password: str = Field(min_length=6, max_length=128)
+    password: str = Field(min_length=10, max_length=128)
 
 
 class LoginInput(BaseModel):
@@ -89,7 +130,32 @@ class UserOut(BaseModel):
     name: str
     role: str = "client"
     picture: Optional[str] = None
+    plan: str = "starter"
+    subscription_status: str = "inactive"
+    email_verified: bool = False
     token: Optional[str] = None
+
+
+class CheckoutInput(BaseModel):
+    plan: str = Field(pattern="^pro$")
+
+
+class ForgotPasswordInput(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordInput(BaseModel):
+    token: str = Field(min_length=32, max_length=256)
+    password: str = Field(min_length=10, max_length=128)
+
+
+class VerifyEmailInput(BaseModel):
+    token: str = Field(min_length=32, max_length=256)
+
+
+class DeleteAccountInput(BaseModel):
+    password: Optional[str] = Field(default=None, max_length=128)
+    confirmation: str = Field(pattern="^DELETE$")
 
 
 class ClientCreate(BaseModel):
@@ -207,7 +273,13 @@ async def health():
 
 
 @api_router.post("/contact", response_model=Contact)
-async def create_contact(payload: ContactCreate, background_tasks: BackgroundTasks):
+async def create_contact(payload: ContactCreate, background_tasks: BackgroundTasks, request: Request):
+    identifier = request.client.host if request.client else "unknown"
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=15)
+    recent = await db.contact_attempts.count_documents({"identifier": identifier, "created_at": {"$gte": cutoff}})
+    if recent >= 5:
+        raise HTTPException(status_code=429, detail="Too many contact requests. Try again later.")
+    await db.contact_attempts.insert_one({"identifier": identifier, "created_at": datetime.now(timezone.utc)})
     contact = Contact(**payload.model_dump())
     await db.contacts.insert_one(contact.model_dump())
     background_tasks.add_task(notify_new_lead, contact)
@@ -252,7 +324,7 @@ async def notify_new_lead(contact: Contact):
 # ---------- Auth endpoints ----------
 
 @api_router.post("/auth/register", response_model=UserOut)
-async def register(payload: RegisterInput, response: Response):
+async def register(payload: RegisterInput, response: Response, background_tasks: BackgroundTasks):
     email = payload.email.lower()
     existing = await db.users.find_one({"email": email})
     if existing:
@@ -264,10 +336,14 @@ async def register(payload: RegisterInput, response: Response):
         "name": payload.name,
         "role": "client",
         "picture": None,
+        "plan": "starter",
+        "subscription_status": "inactive",
+        "email_verified": False,
         "password_hash": hash_password(payload.password),
         "created_at": now_iso(),
     }
     await db.users.insert_one(doc)
+    await issue_account_token(doc, "email_verification", "/verify-email", background_tasks)
     jwt_token = create_access_token(user_id, email)
     set_auth_cookie(response, jwt_token)
     return UserOut(**doc, token=jwt_token)
@@ -327,6 +403,9 @@ async def google_session(payload: SessionInput, response: Response):
             "name": data.get("name") or email,
             "role": role,
             "picture": data.get("picture"),
+            "plan": "starter",
+            "subscription_status": "inactive",
+            "email_verified": True,
             "created_at": now_iso(),
         }
         await db.users.insert_one({**user})
@@ -358,6 +437,188 @@ async def logout(request: Request, response: Response):
     response.delete_cookie("access_token", path="/")
     response.delete_cookie("session_token", path="/")
     return {"success": True}
+
+
+@api_router.post("/auth/forgot-password")
+async def forgot_password(payload: ForgotPasswordInput, background_tasks: BackgroundTasks):
+    user = await db.users.find_one({"email": payload.email.lower()}, {"_id": 0})
+    if user:
+        await issue_account_token(user, "password_reset", "/reset-password", background_tasks)
+    return {"message": "If an account exists, a password reset link has been sent."}
+
+
+@api_router.post("/auth/reset-password")
+async def reset_password(payload: ResetPasswordInput):
+    token = await db.account_tokens.find_one_and_delete({
+        "token_hash": token_digest(payload.token),
+        "purpose": "password_reset",
+        "expires_at": {"$gt": datetime.now(timezone.utc)},
+    })
+    if not token:
+        raise HTTPException(status_code=400, detail="This reset link is invalid or expired")
+    await db.users.update_one({"user_id": token["user_id"]}, {"$set": {"password_hash": hash_password(payload.password)}})
+    await db.user_sessions.delete_many({"user_id": token["user_id"]})
+    return {"message": "Password updated. You can now sign in."}
+
+
+@api_router.post("/auth/verify-email")
+async def verify_email(payload: VerifyEmailInput):
+    token = await db.account_tokens.find_one_and_delete({
+        "token_hash": token_digest(payload.token),
+        "purpose": "email_verification",
+        "expires_at": {"$gt": datetime.now(timezone.utc)},
+    })
+    if not token:
+        raise HTTPException(status_code=400, detail="This verification link is invalid or expired")
+    await db.users.update_one({"user_id": token["user_id"]}, {"$set": {"email_verified": True}})
+    return {"message": "Email verified successfully."}
+
+
+@api_router.post("/auth/resend-verification")
+async def resend_verification(background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)):
+    if user.get("email_verified"):
+        return {"message": "Email is already verified."}
+    await issue_account_token(user, "email_verification", "/verify-email", background_tasks)
+    return {"message": "Verification email sent."}
+
+
+@api_router.delete("/account")
+async def delete_account(payload: DeleteAccountInput, response: Response, user: dict = Depends(get_current_user)):
+    stored = await db.users.find_one({"user_id": user["user_id"]})
+    if not stored:
+        raise HTTPException(status_code=404, detail="Account not found")
+    if stored.get("role") == "admin":
+        raise HTTPException(status_code=403, detail="The primary admin account cannot be deleted here")
+    if stored.get("password_hash") and (not payload.password or not verify_password(payload.password, stored["password_hash"])):
+        raise HTTPException(status_code=401, detail="Password is incorrect")
+    customer_id = stored.get("stripe_customer_id")
+    if customer_id and os.environ.get("STRIPE_SECRET_KEY"):
+        stripe.api_key = os.environ["STRIPE_SECRET_KEY"]
+        await asyncio.to_thread(stripe.Customer.delete, customer_id)
+    user_id = user["user_id"]
+    workflow_ids = [item["id"] async for item in db.workflows.find({"user_id": user_id}, {"id": 1, "_id": 0})]
+    await asyncio.gather(
+        db.clients.delete_many({"user_id": user_id}),
+        db.workflows.delete_many({"user_id": user_id}),
+        db.runs.delete_many({"$or": [{"user_id": user_id}, {"workflow_id": {"$in": workflow_ids}}]}),
+        db.user_sessions.delete_many({"user_id": user_id}),
+        db.account_tokens.delete_many({"user_id": user_id}),
+        db.users.delete_one({"user_id": user_id}),
+    )
+    response.delete_cookie("access_token", path="/")
+    response.delete_cookie("session_token", path="/")
+    return {"success": True}
+
+
+# ---------- Billing ----------
+
+def stripe_configured() -> bool:
+    return all(os.environ.get(key) for key in ("STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_PRO_PRICE_ID"))
+
+
+@api_router.get("/billing/status")
+async def billing_status(user: dict = Depends(get_current_user)):
+    return {
+        "configured": stripe_configured(),
+        "plan": user.get("plan", "starter"),
+        "subscription_status": user.get("subscription_status", "inactive"),
+        "current_period_end": user.get("subscription_current_period_end"),
+        "cancel_at_period_end": user.get("subscription_cancel_at_period_end", False),
+    }
+
+
+@api_router.post("/billing/checkout")
+async def create_checkout(payload: CheckoutInput, user: dict = Depends(get_current_user)):
+    secret = os.environ.get("STRIPE_SECRET_KEY")
+    price_id = os.environ.get("STRIPE_PRO_PRICE_ID")
+    frontend_url = os.environ.get("FRONTEND_URL", "").rstrip("/")
+    if not secret or not price_id or not frontend_url:
+        raise HTTPException(status_code=503, detail="Billing is not configured")
+
+    stripe.api_key = secret
+    customer_id = user.get("stripe_customer_id")
+    if not customer_id:
+        customer = await asyncio.to_thread(
+            stripe.Customer.create,
+            email=user["email"],
+            name=user.get("name"),
+            metadata={"user_id": user["user_id"]},
+        )
+        customer_id = customer.id
+        await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"stripe_customer_id": customer_id}})
+
+    session = await asyncio.to_thread(
+        stripe.checkout.Session.create,
+        customer=customer_id,
+        mode="subscription",
+        line_items=[{"price": price_id, "quantity": 1}],
+        success_url=f"{frontend_url}/dashboard/billing?checkout=success",
+        cancel_url=f"{frontend_url}/dashboard/billing?checkout=cancelled",
+        client_reference_id=user["user_id"],
+        metadata={"user_id": user["user_id"], "plan": payload.plan},
+        allow_promotion_codes=True,
+    )
+    return {"url": session.url}
+
+
+@api_router.post("/billing/portal")
+async def create_billing_portal(user: dict = Depends(get_current_user)):
+    secret = os.environ.get("STRIPE_SECRET_KEY")
+    frontend_url = os.environ.get("FRONTEND_URL", "").rstrip("/")
+    customer_id = user.get("stripe_customer_id")
+    if not secret or not frontend_url or not customer_id:
+        raise HTTPException(status_code=400, detail="No billing account is available")
+    stripe.api_key = secret
+    session = await asyncio.to_thread(
+        stripe.billing_portal.Session.create,
+        customer=customer_id,
+        return_url=f"{frontend_url}/dashboard/billing",
+    )
+    return {"url": session.url}
+
+
+@api_router.post("/billing/webhook")
+async def stripe_webhook(request: Request):
+    secret = os.environ.get("STRIPE_SECRET_KEY")
+    webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET")
+    if not secret or not webhook_secret:
+        raise HTTPException(status_code=503, detail="Billing is not configured")
+    stripe.api_key = secret
+    payload = await request.body()
+    signature = request.headers.get("stripe-signature")
+    try:
+        event = stripe.Webhook.construct_event(payload, signature, webhook_secret)
+    except (ValueError, stripe.error.SignatureVerificationError):
+        raise HTTPException(status_code=400, detail="Invalid Stripe webhook")
+
+    obj = event["data"]["object"]
+    event_type = event["type"]
+    if event_type == "checkout.session.completed":
+        user_id = obj.get("client_reference_id") or obj.get("metadata", {}).get("user_id")
+        if user_id:
+            await db.users.update_one(
+                {"user_id": user_id},
+                {"$set": {
+                    "stripe_customer_id": obj.get("customer"),
+                    "stripe_subscription_id": obj.get("subscription"),
+                    "plan": "pro",
+                    "subscription_status": "active",
+                }},
+            )
+    elif event_type in {"customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"}:
+        status = obj.get("status", "inactive")
+        active = status in {"active", "trialing"}
+        await db.users.update_one(
+            {"stripe_customer_id": obj.get("customer")},
+            {"$set": {
+                "stripe_subscription_id": obj.get("id"),
+                "plan": "pro" if active else "starter",
+                "subscription_status": status,
+                "subscription_current_period_end": datetime.fromtimestamp(obj["current_period_end"], timezone.utc).isoformat() if obj.get("current_period_end") else None,
+                "subscription_cancel_at_period_end": obj.get("cancel_at_period_end", False),
+            }},
+        )
+    return {"received": True}
 
 
 # ---------- Leads (admin only) ----------
@@ -415,6 +676,10 @@ async def list_workflows(user: dict = Depends(get_current_user)):
 
 @api_router.post("/workflows", response_model=WorkflowOut)
 async def create_workflow(payload: WorkflowCreate, user: dict = Depends(get_current_user)):
+    if user.get("role") != "admin" and user.get("plan", "starter") != "pro":
+        active_count = await db.workflows.count_documents({"user_id": user["user_id"], "status": "active"})
+        if active_count >= 3:
+            raise HTTPException(status_code=403, detail="Starter plans support up to 3 active workflows. Upgrade to Pro to add more.")
     doc = {
         "id": str(uuid.uuid4()),
         "user_id": user["user_id"],
@@ -453,11 +718,25 @@ async def delete_workflow(workflow_id: str, user: dict = Depends(get_current_use
 
 # ---------- Workflow execution engine ----------
 
+async def validate_outbound_url(value: str):
+    parsed = urlparse(value)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        raise ValueError("Workflow URLs must use HTTPS and cannot contain credentials")
+    try:
+        addresses = await asyncio.to_thread(socket.getaddrinfo, parsed.hostname, parsed.port or 443, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise ValueError("Workflow URL hostname could not be resolved") from exc
+    for entry in addresses:
+        address = ipaddress.ip_address(entry[4][0])
+        if not address.is_global:
+            raise ValueError("Workflow URLs cannot target private or local networks")
+
 async def _run_step(step: dict, wf: dict, triggered_by: str, event: Optional[dict]) -> dict:
     stype = step.get("type", "action")
     name = step["name"]
     text = step.get("message") or f"StreamLine: workflow '{wf['name']}' step '{name}' executed ({triggered_by})"
     if stype == "webhook" and step.get("url"):
+        await validate_outbound_url(step["url"])
         async with httpx.AsyncClient(timeout=10) as hc:
             r = await hc.post(step["url"], json={
                 "workflow": wf["name"], "trigger": wf["trigger"], "step": name,
@@ -465,6 +744,7 @@ async def _run_step(step: dict, wf: dict, triggered_by: str, event: Optional[dic
             })
         return {"name": name, "type": stype, "status": "success" if r.status_code < 400 else "failed", "detail": f"HTTP {r.status_code}"}
     if stype == "slack" and step.get("url"):
+        await validate_outbound_url(step["url"])
         async with httpx.AsyncClient(timeout=10) as hc:
             r = await hc.post(step["url"], json={"text": text})
         return {"name": name, "type": stype, "status": "success" if r.status_code < 400 else "failed", "detail": f"Slack HTTP {r.status_code}"}
@@ -535,6 +815,11 @@ async def run_workflow(workflow_id: str, user: dict = Depends(get_current_user))
         raise HTTPException(status_code=404, detail="Workflow not found")
     if wf["status"] != "active":
         raise HTTPException(status_code=400, detail="Workflow is paused. Activate it to run.")
+    if user.get("role") != "admin" and user.get("plan", "starter") != "pro":
+        month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+        monthly_runs = await db.runs.count_documents({"user_id": user["user_id"], "started_at": {"$gte": month_start}})
+        if monthly_runs >= 100:
+            raise HTTPException(status_code=403, detail="Starter plans include 100 runs per month. Upgrade to Pro to continue.")
     run = await execute_workflow(wf, triggered_by="manual")
     return RunOut(**run)
 
@@ -571,10 +856,26 @@ async def dashboard_stats(user: dict = Depends(get_current_user)):
 
 app.include_router(api_router)
 
+
+@app.middleware("http")
+async def security_middleware(request: Request, call_next):
+    origin = request.headers.get("origin")
+    allowed = {item.strip() for item in os.environ.get("CORS_ORIGINS", "").split(",") if item.strip()}
+    unsafe = request.method in {"POST", "PUT", "PATCH", "DELETE"}
+    stripe_hook = request.url.path == "/api/billing/webhook"
+    if unsafe and origin and not stripe_hook and origin not in allowed:
+        return Response(content='{"detail":"Origin not allowed"}', status_code=403, media_type="application/json")
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    return response
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_origins=[item.strip() for item in os.environ.get('CORS_ORIGINS', '').split(',') if item.strip()],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -589,6 +890,9 @@ async def startup():
     await db.users.create_index("user_id")
     await db.user_sessions.create_index("session_token")
     await db.login_attempts.create_index("identifier")
+    await db.contact_attempts.create_index("created_at", expireAfterSeconds=900)
+    await db.account_tokens.create_index("token_hash", unique=True)
+    await db.account_tokens.create_index("expires_at", expireAfterSeconds=0)
     admin_email = os.environ["ADMIN_EMAIL"].lower()
     admin_password = os.environ["ADMIN_PASSWORD"]
     existing = await db.users.find_one({"email": admin_email})

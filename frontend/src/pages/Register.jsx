@@ -44,7 +44,7 @@ export default function Register() {
           <form onSubmit={submit} className="space-y-5" data-testid="register-form">
             <Input data-testid="register-name-input" required placeholder="Full name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="rounded-xl" />
             <Input data-testid="register-email-input" required type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="rounded-xl" />
-            <Input data-testid="register-password-input" required type="password" placeholder="Password (min 6 chars)" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="rounded-xl" />
+            <Input data-testid="register-password-input" required minLength={10} type="password" placeholder="Password (minimum 10 characters)" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="rounded-xl" />
             {error && <p data-testid="register-error" className="text-sm text-destructive">{error}</p>}
             <Button type="submit" disabled={loading} data-testid="register-submit-button" className="w-full rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
               {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Create Account
