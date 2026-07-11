@@ -33,6 +33,7 @@ Use the "Save to GitHub" feature in Emergent (or `git push`) to get this repo on
    - `STRIPE_PRO_PRICE_ID` = recurring Pro price ID
    - `STRIPE_WEBHOOK_SECRET` = signing secret for the webhook below
    - `RESEND_API_KEY`, `SENDER_EMAIL`, `NOTIFY_EMAIL` for lead and workflow emails
+   - `DEEPSEEK_API_KEY` for the authenticated `/api/ai/ask` assistant endpoint
 3. In Stripe Workbench, add a webhook endpoint at `<backend URL>/api/billing/webhook` for:
    - `checkout.session.completed`
    - `customer.subscription.created`

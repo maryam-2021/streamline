@@ -15,6 +15,7 @@ import httpx
 import asyncio
 import resend
 import stripe
+from openai import AsyncOpenAI
 import logging
 import uuid
 import secrets
@@ -156,6 +157,12 @@ class VerifyEmailInput(BaseModel):
 class DeleteAccountInput(BaseModel):
     password: Optional[str] = Field(default=None, max_length=128)
     confirmation: str = Field(pattern="^DELETE$")
+
+
+class AIRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=8000)
+    model: str = Field(default="deepseek-v4-flash", pattern="^deepseek-v4-(flash|pro)$")
+    thinking: bool = False
 
 
 class ClientCreate(BaseModel):
@@ -508,6 +515,34 @@ async def delete_account(payload: DeleteAccountInput, response: Response, user: 
     response.delete_cookie("access_token", path="/")
     response.delete_cookie("session_token", path="/")
     return {"success": True}
+
+
+# ---------- AI assistant ----------
+
+@api_router.post("/ai/ask")
+async def ask_ai(payload: AIRequest, user: dict = Depends(get_current_user)):
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="AI assistant is not configured")
+    client = AsyncOpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+    try:
+        response = await client.chat.completions.create(
+            model=payload.model,
+            messages=[
+                {"role": "system", "content": "You are StreamLine's concise workflow automation assistant. Never reveal secrets or claim an action was executed unless the application confirms it."},
+                {"role": "user", "content": payload.prompt},
+            ],
+            extra_body={"thinking": {"type": "enabled" if payload.thinking else "disabled"}},
+        )
+    except Exception:
+        logger.exception("DeepSeek request failed")
+        raise HTTPException(status_code=502, detail="AI provider request failed")
+    message = response.choices[0].message
+    return {
+        "content": message.content or "",
+        "model": payload.model,
+        "usage": response.usage.model_dump() if response.usage else None,
+    }
 
 
 # ---------- Billing ----------

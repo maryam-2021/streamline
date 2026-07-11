@@ -33,3 +33,5 @@ services:
         sync: false
       - key: NOTIFY_EMAIL
         sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
